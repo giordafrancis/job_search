@@ -4,7 +4,6 @@ import httpx
 from bs4 import BeautifulSoup as bs
 import json
 from urllib.parse import urlencode
-from fastcore.utils import *
 from datetime import datetime
 import os
 import smtplib
@@ -15,7 +14,12 @@ from email.mime.text import MIMEText
 
 class JobSource:
     "Base class for all job sources"
-    def __init__(self, keywords, location=None, distance=10, lat=None, lon=None):  store_attr()
+    def __init__(self, keywords, location=None, distance=10, lat=None, lon=None):
+        self.keywords = keywords
+        self.location = location
+        self.distance = distance
+        self.lat = lat
+        self.lon = lon
         
     def search(self): 
         "Search for jobs and return raw data"
