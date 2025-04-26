@@ -29,4 +29,4 @@ jobs:
         GMAIL_USER: ${{ secrets.GMAIL_USER }}
         GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
         EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
-      run: python job_search.py
+      run: python job_search2.py
