@@ -430,7 +430,7 @@ def standardize_column_names(df, source_type):
             'application_closeDate_formatted': 'closing_date',
             'days_to_apply': 'days_remaining',
             'shortDescription': 'description',
-            'full_url': 'url',
+            'full_url': 'url_',
             'source': 'source'
         })
     
@@ -444,7 +444,7 @@ def standardize_column_names(df, source_type):
             'salary_description': 'salary',
             'application_closeDate_formatted': 'closing_date',
             'days_to_apply': 'days_remaining',
-            'full_url': 'url',
+            'full_url': 'url_',
             'source': 'source'
         })
     
@@ -459,7 +459,7 @@ def standardize_column_names(df, source_type):
             'application_closeDate_formatted': 'closing_date',
             'days_to_apply': 'days_remaining',
             'shortDescription': 'description',
-            'full_url': 'url',
+            'full_url': 'url_',
             'source': 'source'
         })
     
@@ -474,7 +474,7 @@ def standardize_column_names(df, source_type):
             'application_closeDate_formatted': 'closing_date',
             'days_to_apply': 'days_remaining',
             'shortDescription': 'description',
-            'full_url': 'url',
+            'full_url': 'url_',
             'source': 'source'
         })
     
@@ -575,7 +575,7 @@ def generate_master_email_content(dfs_dict, max_jobs_per_source=10):
     
     return html
 
-def generate_email_content_for_source(df, source_name, max_jobs=10):
+def generate_email_content_for_source(df, source_name, max_jobs=20):
     "Generate HTML table for a specific job source"
     if df.empty: return "<p>No jobs found</p>"
     
@@ -610,7 +610,7 @@ def generate_email_content_for_source(df, source_name, max_jobs=10):
         closing = job.get('closing_date', job.get('application_closeDate_formatted', 'Not specified'))
         
         # Fix URL issue by ensuring we get a string, not a Series
-        url = job.get('url', job.get('full_url', '#'))
+        url = job.get('url_', job.get('full_url', '#'))
         if hasattr(url, 'iloc') and len(url) > 0:  # It's a Series
             url = url.iloc[-1] if isinstance(url.iloc[-1], str) else '#'
         
