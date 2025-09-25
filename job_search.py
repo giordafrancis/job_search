@@ -416,6 +416,74 @@ class DunottarJobSource(JobSource):
             )
             
         return df
+    
+class WoldinghamJobSource(JobSource):
+    "Woldingham School job source implementation"
+    def __init__(self, keywords=None):
+        super().__init__(keywords=keywords)
+        self.base_url = "https://www.woldinghamschool.co.uk/vacancies.html"
+        
+    def search(self):
+        "Search Woldingham School and return raw data"
+        print(f"Fetching jobs from Woldingham School: {self.base_url}")
+        response = httpx.get(self.base_url)
+        soup = bs(response.text, "html.parser")
+        return self._extract_jobs_from_soup(soup)
+    
+    def _extract_jobs_from_soup(self, soup):
+        "Extract job listings from the page HTML"
+        jobs = []
+        job_titles = ["Housemistress", "Chaplain", "Head of French"]
+        
+        for title in job_titles:
+            title_elem = soup.find(string=title)
+            if title_elem:
+                job = {'title': title}
+                parent = title_elem.parent
+                while parent and parent.name != 'body':
+                    text = parent.get_text()
+                    if 'Start Date:' in text or 'Start date:' in text:
+                        for line in text.split('\n'):
+                            line = line.strip()
+                            if line.startswith('Start Date:') or line.startswith('Start date:'): 
+                                job['start_date'] = line.split(':', 1)[1].strip()
+                            elif 'Salary:' in line: 
+                                job['salary_description'] = line.split('Salary:', 1)[1].strip()
+                            elif 'close at 09.00am on' in line:
+                                import re
+                                match = re.search(r'close at 09\.00am on (.+?)\.', line)
+                                if match: job['closing_date'] = match.group(1)
+                        break
+                    parent = parent.parent
+                
+                job.update({'employer_name': 'Woldingham School', 'displayLocation': 'Woldingham, Surrey', 
+                        'source': 'Woldingham School', 'url': self.base_url})
+                jobs.append(job)
+        
+        print(f"Found {len(jobs)} jobs on Woldingham School")
+        return jobs
+
+    def normalize(self, raw_data):
+        "Convert Woldingham School data to standard format"
+        if not raw_data: return pd.DataFrame()
+        df = pd.DataFrame(raw_data)
+        
+        now = pd.Timestamp.now()
+        
+        if 'closing_date' in df.columns:
+            df['application_closeDate'] = pd.to_datetime(df['closing_date'], errors='coerce')
+            df['application_closeDate_formatted'] = df['closing_date']
+        
+        if 'application_closeDate' in df.columns and not df['application_closeDate'].isna().all():
+            df['days_to_apply'] = (df['application_closeDate'] - now).dt.days
+        
+        if 'url' in df.columns: df['full_url'] = df['url']
+        
+        df['status'] = 'current'
+        df['contractTypes'] = 'Permanent'
+        df['contractTerms'] = 'Permanent'
+        
+        return df
 
 def standardize_column_names(df, source_type):
     "Rename columns to standard format based on source type"
@@ -477,7 +545,20 @@ def standardize_column_names(df, source_type):
             'full_url': 'url_',
             'source': 'source'
         })
-    
+    elif source_type == 'woldingham':
+        return df.rename(columns={
+            'title': 'title',
+            'employer_name': 'employer_name',
+            'displayLocation': 'location',
+            'contractTypes': 'contract_type',
+            'contractTerms': 'contract_term',
+            'salary_description': 'salary',
+            'application_closeDate_formatted': 'closing_date',
+            'days_to_apply': 'days_remaining',
+            'shortDescription': 'description',
+            'full_url': 'url_',
+            'source': 'source'
+        })
     return df
 
 def generate_master_email_content(dfs_dict, max_jobs_per_source=10):
@@ -489,13 +570,15 @@ def generate_master_email_content(dfs_dict, max_jobs_per_source=10):
         'TES': "https://www.tes.com/jobs/search?keywords=Design+and+Technology+Teacher&displayLocation=CR5+1SS&lat=51.30662208651764&lon=-0.1133822439545745&distance=10&distanceUnit=mi&sort=distance",
         'GOV.UK': "https://teaching-vacancies.service.gov.uk/jobs?keyword=Design+and+technology&location=The+Glade%2C+Coulsdon+CR5+1SS&radius=10&sort_by=distance&teaching_job_roles%5B%5D=teacher&phases%5B%5D=secondary&phases%5B%5D=sixth_form_or_college",
         'RAA School': "https://raaschool.face-ed.co.uk/vacancies?filter=&currentpage=1",
-        'Dunottar School': "https://www.dunottarschool.com/about-us/vacancies/"
+        'Dunottar School': "https://www.dunottarschool.com/about-us/vacancies/",
+        'Woldingham School': "https://www.woldinghamschool.co.uk/vacancies.html"
     }
     
     # Source notes
     source_notes = {
         'RAA School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology).",
-        'Dunottar School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology)."
+        'Dunottar School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology).",
+        'Woldingham School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology)."
     }
     
     # Start building HTML content
@@ -643,7 +726,8 @@ def main(keywords="Design and Technology Teacher", distance=10, max_pages=2,
         'TES': TesJobSource(keywords=keywords, distance=distance, max_pages=max_pages),
         'GOV.UK': GovJobSource(keywords=keywords.replace(' Teacher', ''), distance=distance),
         'RAA School': RaaJobSource(max_pages=3),
-        'Dunottar School': DunottarJobSource()
+        'Dunottar School': DunottarJobSource(),
+        'Woldingham School': WoldinghamJobSource()
     }
     
     # Fetch and standardize jobs from each source
