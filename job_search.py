@@ -12,7 +12,7 @@ from email.mime.text import MIMEText
 
 
 
-class JobSource:
+ class JobSource:
     "Base class for all job sources"
     def __init__(self, keywords, location=None, distance=10, lat=None, lon=None):
         self.keywords = keywords
@@ -28,11 +28,23 @@ class JobSource:
     def normalize(self, raw_data): 
         "Convert source-specific data to standard format"
         raise NotImplementedError
+    
+    def filter_design_tech_jobs(self, df):
+        "Filter jobs containing design/technology keywords"
+        if df.empty: return df
+        import re
+        pattern = r'(design|technology|d\s*&\s*t)'
+        # Check both title and description columns
+        title_match = df.get('title', pd.Series()).fillna('').str.contains(pattern, case=False, regex=True)
+        desc_match = df.get('shortDescription', pd.Series()).fillna('').str.contains(pattern, case=False, regex=True)
+        
+        return df[title_match | desc_match]
         
     def get_jobs(self):
         "Main method to get normalized job listings"
         raw_data = self.search()
-        return self.normalize(raw_data)
+        return self.filter_design_tech_jobs(self.normalize(raw_data))
+
 
 class TesJobSource(JobSource):
     "TES job source implementation"
@@ -576,8 +588,8 @@ def generate_master_email_content(dfs_dict, max_jobs_per_source=10):
     
     # Source notes
     source_notes = {
-        'RAA School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology).",
-        'Dunottar School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology).",
+        'RAA School': "Note: Only vacancies that match the word Design, Tehnology or D&T on title or description",
+        'Dunottar School': "Note: Only vacancies that match the word Design, Tehnology or D&T on title or description",
         'Woldingham School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology)."
     }
     
