@@ -12,7 +12,7 @@ from email.mime.text import MIMEText
 
 
 
- class JobSource:
+class JobSource:
     "Base class for all job sources"
     def __init__(self, keywords, location=None, distance=10, lat=None, lon=None):
         self.keywords = keywords
