@@ -497,6 +497,128 @@ class WoldinghamJobSource(JobSource):
         
         return df
 
+class SuttonHighJobSource(JobSource):
+    "Sutton High School job source implementation via TES embed"
+    def __init__(self, keywords=None):
+        super().__init__(keywords=keywords)
+        self.base_url = "https://www.tes.com/jobs/search/embed/1039809"
+        
+    def search(self):
+        "Search Sutton High School jobs and return raw data"
+        params = dict(keywords=self.keywords or "", frameHeight=742, frameWidth=1244)
+        url = f"{self.base_url}?{urlencode(params)}"
+        print(f"Fetching jobs from Sutton High School: {url}")
+        response = httpx.get(url)
+        soup = bs(response.text, "html.parser")
+        return self._extract_jobs_from_soup(soup)
+    
+    def _extract_jobs_from_soup(self, soup):
+        "Extract job listings from the embedded TES page"
+        jobs = []
+        job_titles = soup.select("h3.tds-job-card__content-title")
+        
+        for title_elem in job_titles:
+            job = {'title': title_elem.text.strip()}
+            
+            card = title_elem.find_parent()
+            while card and 'job-card' not in card.get('class', []): card = card.find_parent()
+            
+            if card:
+                link = card.select_one("a[href*='/jobs/']")
+                if link: job['url'] = link.get('href')
+                
+                text = card.get_text()
+                if 'Apply by' in text:
+                    import re
+                    date_match = re.search(r'Apply by (\d{1,2} \w+ \d{4})', text)
+                    if date_match: job['closing_date'] = date_match.group(1)
+                
+                if '£' in text:
+                    salary_match = re.search(r'£[\d,]+(?:\.\d{2})?(?:\s*-\s*£[\d,]+(?:\.\d{2})?)?', text)
+                    if salary_match: job['salary_description'] = salary_match.group(0)
+            
+            job.update({'employer_name': 'Sutton High School', 'displayLocation': 'Sutton', 'source': 'Sutton High School'})
+            jobs.append(job)
+        
+        print(f"Found {len(jobs)} jobs on Sutton High School")
+        return jobs
+
+        
+    def normalize(self, raw_data):
+        "Convert Sutton High School data to standard format"
+        if not raw_data: return pd.DataFrame()
+        df = pd.DataFrame(raw_data)
+        now = pd.Timestamp.now()
+        
+        if 'closing_date' in df.columns:
+            df['application_closeDate'] = pd.to_datetime(df['closing_date'], errors='coerce')
+            df['application_closeDate_formatted'] = df['closing_date']
+            df['days_to_apply'] = (df['application_closeDate'] - now).dt.days
+        
+        if 'url' in df.columns:
+            df['full_url'] = df['url'].apply(lambda x: f"https://www.tes.com{x}" if x.startswith('/') else x)
+        
+        df['status'] = 'current'
+        return df
+
+class GdstJobSource(JobSource):
+    "Girls Day School Trust job source implementation"
+    def __init__(self, keywords=None):
+        super().__init__(keywords=keywords)
+        self.base_url = "https://www.gdst.net/careers/vacancies/"
+        
+    def search(self):
+        "Search GDST jobs and return raw data"
+        print(f"Fetching jobs from GDST: {self.base_url}")
+        response = httpx.get(self.base_url)
+        soup = bs(response.text, "html.parser")
+        return self._extract_jobs_from_soup(soup)
+    
+    def _extract_jobs_from_soup(self, soup):
+        "Extract job listings from GDST page filtered by Sutton/Croydon schools"
+        jobs = []
+        vacancy_container = soup.select_one('.js-vacancies-container')
+        if not vacancy_container: return jobs
+        
+        job_items = vacancy_container.select('.cell')
+        
+        for item in job_items:
+            job = {}
+            title_elem = item.select_one('h3, h2, .vacancy-title')
+            if title_elem: job['title'] = title_elem.text.strip()
+            
+            school_elem = item.select_one('.school-name, p')
+            if school_elem: 
+                school_name = school_elem.text.strip()
+                if 'sutton' not in school_name.lower() and 'croydon' not in school_name.lower(): continue
+                job['employer_name'] = school_name
+            
+            link_elem = item.select_one('a')
+            if link_elem: job['url'] = link_elem.get('href')
+            
+            job['source'] = 'GDST'
+            if job.get('title') and job['title'] != 'Find your nearest vacancy': jobs.append(job)
+        
+        print(f"Found {len(jobs)} jobs on GDST (Sutton/Croydon only)")
+        return jobs
+
+
+        
+    def normalize(self, raw_data):
+        "Convert GDST data to standard format"
+        if not raw_data: return pd.DataFrame()
+        df = pd.DataFrame(raw_data)
+        now = pd.Timestamp.now()
+        
+        if 'closing_date' in df.columns:
+            df['application_closeDate'] = pd.to_datetime(df['closing_date'], errors='coerce')
+            df['application_closeDate_formatted'] = df['closing_date']
+            df['days_to_apply'] = (df['application_closeDate'] - now).dt.days
+        
+        if 'url' in df.columns: df['full_url'] = df['url']
+        df['status'] = 'current'
+        return df
+
 def standardize_column_names(df, source_type):
     "Rename columns to standard format based on source type"
     if source_type == 'tes':
@@ -571,26 +693,43 @@ def standardize_column_names(df, source_type):
             'full_url': 'url_',
             'source': 'source'
         })
+    elif source_type in ['suttonhigh', 'gdst']:
+        return df.rename(columns={
+            'title': 'title',
+            'employer_name': 'employer_name',
+            'displayLocation': 'location',
+            'contractTypes': 'contract_type',
+            'contractTerms': 'contract_term',
+            'salary_description': 'salary',
+            'application_closeDate_formatted': 'closing_date',
+            'days_to_apply': 'days_remaining',
+            'shortDescription': 'description',
+            'full_url': 'url_',
+            'source': 'source'
+        })
     return df
 
 def generate_master_email_content(dfs_dict, max_jobs_per_source=10):
     "Generate complete HTML email content with all job sources"
     today = datetime.now().strftime('%d %B %Y at %H:%M')
     
-    # Search URLs for each source
+    # Search URLs for each source and notes
     search_urls = {
-        'TES': "https://www.tes.com/jobs/search?keywords=Design+and+Technology+Teacher&displayLocation=CR5+1SS&lat=51.30662208651764&lon=-0.1133822439545745&distance=10&distanceUnit=mi&sort=distance",
-        'GOV.UK': "https://teaching-vacancies.service.gov.uk/jobs?keyword=Design+and+technology&location=The+Glade%2C+Coulsdon+CR5+1SS&radius=10&sort_by=distance&teaching_job_roles%5B%5D=teacher&phases%5B%5D=secondary&phases%5B%5D=sixth_form_or_college",
-        'RAA School': "https://raaschool.face-ed.co.uk/vacancies?filter=&currentpage=1",
+        'TES': "https://www.tes.com/jobs/search?keywords=Design+and+Technology+Teacher&displayLocation=CR5+1SS",
+        'GOV.UK': "https://teaching-vacancies.service.gov.uk/jobs?keyword=Design+and+technology&location=The+Glade%2C+Coulsdon+CR5+1SS",
+        'RAA School': "https://raaschool.face-ed.co.uk/vacancies",
         'Dunottar School': "https://www.dunottarschool.com/about-us/vacancies/",
-        'Woldingham School': "https://www.woldinghamschool.co.uk/vacancies.html"
+        'Woldingham School': "https://www.woldinghamschool.co.uk/vacancies.html",
+        'Sutton High School': "https://www.tes.com/jobs/search/embed/1039809",
+        'GDST': "https://www.gdst.net/careers/vacancies/"
     }
     
-    # Source notes
     source_notes = {
-        'RAA School': "Note: Only vacancies that match the word Design, Tehnology or D&T on title or description",
-        'Dunottar School': "Note: Only vacancies that match the word Design, Tehnology or D&T on title or description",
-        'Woldingham School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology)."
+        'RAA School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology).",
+        'Dunottar School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology).",
+        'Woldingham School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology).",
+        'Sutton High School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology).",
+        'GDST': "Note: Shows jobs from Sutton High School and Croydon High School only."
     }
     
     # Start building HTML content
@@ -739,7 +878,9 @@ def main(keywords="Design and Technology Teacher", distance=10, max_pages=2,
         'GOV.UK': GovJobSource(keywords=keywords.replace(' Teacher', ''), distance=distance),
         'RAA School': RaaJobSource(max_pages=3),
         'Dunottar School': DunottarJobSource(),
-        'Woldingham School': WoldinghamJobSource()
+        'Woldingham School': WoldinghamJobSource(),
+        'Sutton High School': SuttonHighJobSource(),
+        'GDST': GdstJobSource()
     }
     
     # Fetch and standardize jobs from each source
