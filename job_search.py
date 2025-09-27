@@ -725,10 +725,10 @@ def generate_master_email_content(dfs_dict, max_jobs_per_source=10):
     }
     
     source_notes = {
-        'RAA School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology).",
-        'Dunottar School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology).",
-        'Woldingham School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology).",
-        'Sutton High School': "Note: All available jobs are displayed for this school (not filtered to Design and Technology).",
+        'RAA School': "Note: Only jobs with design and technology words in title or description are displayed.",
+        'Dunottar School': "Note: Only jobs with design and technology words in title or description are displayed.",
+        'Woldingham School': "Note: Only jobs with design and technology words in title or description are displayed.",
+        'Sutton High School': "Note: Only jobs with design and technology words in title or description are displayed.",
         'GDST': "Note: Shows jobs from Sutton High School and Croydon High School only."
     }
     
