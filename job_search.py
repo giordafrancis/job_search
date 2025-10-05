@@ -575,7 +575,7 @@ class GdstJobSource(JobSource):
         return self._extract_jobs_from_soup(soup)
     
     def _extract_jobs_from_soup(self, soup):
-        "Extract job listings from GDST page filtered by Sutton/Croydon schools"
+        "Extract job listings from GDST page"
         jobs = []
         vacancy_container = soup.select_one('.js-vacancies-container')
         if not vacancy_container: return jobs
@@ -584,26 +584,25 @@ class GdstJobSource(JobSource):
         
         for item in job_items:
             job = {}
-            title_elem = item.select_one('h3, h2, .vacancy-title')
+            # Extract title (h2 inside media-block__content)
+            title_elem = item.select_one('h2.media-block__text')
             if title_elem: job['title'] = title_elem.text.strip()
             
-            school_elem = item.select_one('.school-name, p')
-            if school_elem: 
-                school_name = school_elem.text.strip()
-                if 'sutton' not in school_name.lower() and 'croydon' not in school_name.lower(): continue
-                job['employer_name'] = school_name
-            
-            link_elem = item.select_one('a')
+            spans = item.select('.media-block__content span')
+            if len(spans) > 1: job['employer_name'] = spans[1].text.strip()
+            if len(spans) > 2 and 'Closing date:' in spans[2].text:
+                job['closing_date'] = spans[2].text.replace('Closing date:', '').strip()
+            # Extract URL
+            link_elem = item.select_one('a.media-block__button')
             if link_elem: job['url'] = link_elem.get('href')
             
             job['source'] = 'GDST'
-            if job.get('title') and job['title'] != 'Find your nearest vacancy': jobs.append(job)
-        
-        print(f"Found {len(jobs)} jobs on GDST (Sutton/Croydon only)")
+            if job.get('title'): jobs.append(job)
+        print(f"Found {len(jobs)} jobs on GDST")
+        jobs = [j for j in jobs if "croydon" in j['employer_name'].lower() or "sutton" in j['employer_name'].lower()]
+        print(f"Found {len(jobs)} jobs on GDST for Croydon and Sutton")
         return jobs
-
-
-        
+    
     def normalize(self, raw_data):
         "Convert GDST data to standard format"
         if not raw_data: return pd.DataFrame()
